@@ -1,9 +1,8 @@
 package playingWithProjections;
 
-import static java.util.Collections.emptyMap;
-
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public class Main {
     public static void main(String[] args) {
@@ -12,13 +11,15 @@ public class Main {
         CountEvents projector = new CountEvents();
         CountRegisteredPlayers projector2 = new CountRegisteredPlayers();
         CountRegisteredPlayersByMonth proj3 = new CountRegisteredPlayersByMonth();
+        CountMostPopularQuizzes prj5 = new CountMostPopularQuizzes();
 
-        new EventStore(projector::projection, projector2::projection, proj3::projection)
+        new EventStore(projector::projection, projector2::projection, proj3::projection, prj5::projection)
             .replay(file);
 
-        System.out.printf("number of events: %d%n", projector.getResult());
-        System.out.printf("number of registered players: %d%n", projector2.getResult());
-        System.out.printf("number of registered players by month:\n%s", proj3.getResult());
+        System.out.printf("=> number of events: %d%n", projector.getResult());
+        System.out.printf("=> number of registered players: %d%n", projector2.getResult());
+        System.out.printf("=> number of registered players by month:\n%s\n", proj3.getResult());
+        System.out.printf("=> number of most popular games:\n%s", prj5.getResult());
     }
 
     private static String FilePathFrom(String[] args) {
@@ -91,7 +92,7 @@ public class Main {
 
             @Override
             public String toString() {
-                return year + "-" + month ;
+                return year + "-" + month;
             }
         }
 
@@ -108,6 +109,36 @@ public class Main {
 
         String getResult() {
             return countByMonth.toString();
+        }
+    }
+
+    private static class CountMostPopularQuizzes {
+        Map<String, String> quizNameById = new HashMap<>();
+        Map<String, Integer> gamesByQuizId = new HashMap<>();
+
+        String getResult() {
+            return gamesByQuizId.entrySet().stream()
+                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                .limit(10)
+                .map(entry -> quizNameById.get(entry.getKey()) + ": " + entry.getKey())
+                .collect(Collectors.joining("\n"));
+        }
+
+        void projection(Event event) {
+            if (event.getType().equals("QuizWasCreated")) {
+                quizNameById.put(event.getPayload().get("quiz_id"), event.getPayload().get("quiz_title"));
+            }
+            if (event.getType().equals("GameWasOpened")) {
+                gamesByQuizId.compute(
+                    event.getPayload().get("quiz_id"),
+                    (quizId, count) -> count == null ? 1 : count + 1
+                );
+            } else if (event.getType().equals("GameWasCancelled")) {
+                gamesByQuizId.compute(
+                    event.getPayload().get("quiz_id"),
+                    (quizId, count) -> count == null ? -1 : count - 1
+                );
+            }
         }
     }
 }
